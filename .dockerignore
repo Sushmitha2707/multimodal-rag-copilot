@@ -1,0 +1,9 @@
+.git
+.env
+__pycache__
+data/index
+data/uploads
+data/*.sqlite
+models
+results
+tests

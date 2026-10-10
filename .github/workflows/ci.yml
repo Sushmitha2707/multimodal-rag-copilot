@@ -1,0 +1,22 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install light dependencies (heavy ML libs are not needed for unit tests)
+        run: |
+          pip install -r requirements-dev.txt
+          pip install fastapi httpx python-multipart pydantic langchain-core langchain-text-splitters
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: pytest -q

@@ -1,0 +1,2 @@
+# Only needed for scripts/train_dpo.py (preference tuning on feedback)
+peft>=0.11

@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+data/index/
+data/uploads/
+data/*.sqlite
+models/*
+!models/.gitkeep
+results/*
+!results/.gitkeep
+.pytest_cache/
+.ruff_cache/

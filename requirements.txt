@@ -1,0 +1,32 @@
+# --- core RAG ---
+langchain>=0.3
+langchain-core>=0.3
+langchain-community>=0.3
+langchain-text-splitters>=0.3
+langchain-huggingface>=0.1
+faiss-cpu>=1.8
+pinecone>=5.0
+langchain-pinecone>=0.2
+# --- LLM providers (use any one; all three enable the provider comparison) ---
+langchain-openai>=0.2
+langchain-anthropic>=0.3
+langchain-google-genai>=2.0
+# --- embeddings + fine-tuning (PyTorch / Hugging Face) ---
+torch>=2.2
+transformers>=4.44
+sentence-transformers>=3.0
+datasets>=2.20
+accelerate>=0.33
+# --- multimodal ingestion ---
+pypdf>=4.0
+pillow>=10.0
+pytesseract>=0.3          # optional OCR (needs the tesseract binary)
+# (video/audio extraction needs the ffmpeg binary)
+# --- serving ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+streamlit>=1.35
+requests>=2.31
+# --- numerics ---
+numpy>=1.26

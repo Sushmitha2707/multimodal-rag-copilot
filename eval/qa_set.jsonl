@@ -1,0 +1,17 @@
+{"question": "How many vacation days do I get each year?", "answer_keywords": ["24"], "source": "leave_policy.md"}
+{"question": "What is the maximum number of days I can carry over to next year, and when do they expire?", "answer_keywords": ["10", "31 march"], "source": "leave_policy.md"}
+{"question": "When do I need a doctor's note for being sick?", "answer_keywords": ["2"], "source": "leave_policy.md"}
+{"question": "How far ahead must I apply for a two-week holiday?", "answer_keywords": ["14"], "source": "leave_policy.md"}
+{"question": "How long is paternity leave and what is the deadline to use it?", "answer_keywords": ["10", "6 months"], "source": "leave_policy.md"}
+{"question": "What is the minimum password length and how often must it be changed?", "answer_keywords": ["14", "90"], "source": "it_security.md"}
+{"question": "I lost my laptop. How quickly do I have to tell IT?", "answer_keywords": ["2 hours"], "source": "it_security.md"}
+{"question": "Can I plug in a USB pen drive on my work machine?", "answer_keywords": ["blocked", "ciso"], "source": "it_security.md"}
+{"question": "What do I need on my personal phone before I can read work email?", "answer_keywords": ["mdm", "encryption"], "source": "it_security.md"}
+{"question": "What is the hotel limit for a trip to Bengaluru?", "answer_keywords": ["7,500"], "source": "expense_policy.md"}
+{"question": "When am I allowed to book business class?", "answer_keywords": ["6 hours", "vice president"], "source": "expense_policy.md"}
+{"question": "By when must I submit my expense claim, and which receipts are mandatory?", "answer_keywords": ["30 days", "500"], "source": "expense_policy.md"}
+{"question": "How long does reimbursement take after approval?", "answer_keywords": ["10 business days"], "source": "expense_policy.md"}
+{"question": "How long is the probation period and when are the reviews?", "answer_keywords": ["6 months", "3-month"], "source": "onboarding.md"}
+{"question": "Which days am I expected in the office?", "answer_keywords": ["tuesday", "wednesday", "thursday"], "source": "onboarding.md"}
+{"question": "Who is covered under the company health insurance and for how much?", "answer_keywords": ["spouse", "5 lakh"], "source": "onboarding.md"}
+{"question": "What is the capital of France?", "answer_keywords": ["don't know"], "source": "none"}
