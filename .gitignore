@@ -11,3 +11,5 @@ results/*
 !results/.gitkeep
 .pytest_cache/
 .ruff_cache/
+data/my_corpus/
+data/pairs/
