@@ -3,12 +3,13 @@
 The corpus is split BY SOURCE FILE into train / held-out so the held-out evaluation never sees
 passages from documents the model was trained on (no leakage).
 
-    python -m scripts.make_pairs --corpus data/my_corpus --provider gemini
+    python -m scripts.make_pairs --corpus data/my_corpus --provider gemini --max-chunks 300 --sleep 4
 """
 
 import argparse
 import json
 import random
+import time
 from pathlib import Path
 
 from langchain_core.output_parsers import StrOutputParser
@@ -48,6 +49,18 @@ def split_sources(sources: list[str], heldout_frac: float, seed: int = 42) -> tu
     return set(srcs[n_held:]), set(srcs[:n_held])
 
 
+def ask_with_retry(chain, payload, tries: int = 5) -> str:
+    """Call the LLM; on rate-limit or transient errors wait and retry instead of crashing."""
+    for attempt in range(tries):
+        try:
+            return chain.invoke(payload)
+        except Exception as e:
+            wait = 15 * (attempt + 1)
+            print(f"  LLM error ({type(e).__name__}); retrying in {wait}s")
+            time.sleep(wait)
+    return ""
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", required=True)
@@ -55,9 +68,13 @@ def main() -> None:
     ap.add_argument("--provider", default=None)
     ap.add_argument("--questions-per-chunk", type=int, default=3)
     ap.add_argument("--heldout-frac", type=float, default=0.25)
+    ap.add_argument("--max-chunks", type=int, default=0, help="cap the number of chunks (0 = all)")
+    ap.add_argument("--sleep", type=float, default=0.0, help="seconds to wait between LLM calls")
     args = ap.parse_args()
 
     chunks = chunk_documents(load_directory(args.corpus))
+    if args.max_chunks:
+        chunks = random.Random(1).sample(chunks, min(args.max_chunks, len(chunks)))
     train_src, held_src = split_sources([c.metadata["source"] for c in chunks], args.heldout_frac)
     print(f"{len(chunks)} chunks | train sources: {len(train_src)} | held-out sources: {len(held_src)}")
 
@@ -67,7 +84,8 @@ def main() -> None:
     counts = {"train": 0, "heldout": 0}
     with open(out / "train.jsonl", "w") as ftr, open(out / "heldout.jsonl", "w") as fho:
         for i, c in enumerate(chunks, start=1):
-            qs = parse_questions(chain.invoke({"n": args.questions_per_chunk, "passage": c.page_content}))
+            qs = parse_questions(ask_with_retry(chain, {"n": args.questions_per_chunk, "passage": c.page_content}))
+            time.sleep(args.sleep)
             split = "train" if c.metadata["source"] in train_src else "heldout"
             f = ftr if split == "train" else fho
             for q in qs:
