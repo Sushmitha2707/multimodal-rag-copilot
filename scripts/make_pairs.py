@@ -3,12 +3,13 @@
 The corpus is split BY SOURCE FILE into train / held-out so the held-out evaluation never sees
 passages from documents the model was trained on (no leakage).
 
-    python -m scripts.make_pairs --corpus data/my_corpus --provider gemini --max-chunks 300 --sleep 4
+    python -m scripts.make_pairs --corpus data/my_corpus --provider gemini --max-chunks 250 --sleep 5
 """
 
 import argparse
 import json
 import random
+import re
 import time
 from pathlib import Path
 
@@ -24,20 +25,47 @@ PROMPT = ChatPromptTemplate.from_messages(
             "system",
             "You write search questions for an enterprise knowledge base. Given a passage, write {n} diverse "
             "questions a real employee might type that this passage answers. Use different wording than the "
-            "passage (paraphrase, do not copy sentences). Return ONLY a JSON list of strings.",
+            "passage (paraphrase, do not copy sentences). Return ONLY the questions, one per line, with no "
+            "numbering, no quotes and no other text.",
         ),
         ("human", "Passage:\n{passage}"),
     ]
 )
 
+QUESTION_RE = re.compile(r'[A-Za-z][^?\n"\\]{8,300}\?')
+EDGE_JUNK = " \t-*\u2022>#`[]{}(),;\"'\\"
+PREAMBLE = ("here are", "here's", "sure", "okay")
+
+
+def clean_line(line: str) -> str:
+    line = re.sub(r"^\s*(?:[-*\u2022>]+|\d+[.)])\s*", "", line)  # bullets and numbering
+    return line.strip(EDGE_JUNK)
+
 
 def parse_questions(text: str) -> list[str]:
-    text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return []
-    return [q.strip() for q in data if isinstance(q, str) and len(q.strip()) > 8]
+    """Extract questions from an LLM reply, whatever the format: one per line (with or without a
+    question mark), numbered or bulleted lists, or JSON-style lists with escaped quotes."""
+    seen, out = set(), []
+    for line in text.splitlines():
+        if "?" in line:
+            candidates = QUESTION_RE.findall(line)
+        else:
+            q = clean_line(line)
+            ok = (
+                12 <= len(q) <= 300
+                and len(q.split()) >= 4
+                and '"' not in q
+                and "\\" not in q
+                and not q.endswith(":")
+                and not q.lower().startswith(PREAMBLE)
+            )
+            candidates = [q] if ok else []
+        for q in candidates:
+            q = q.strip()
+            if q.lower() not in seen:
+                seen.add(q.lower())
+                out.append(q)
+    return out
 
 
 def split_sources(sources: list[str], heldout_frac: float, seed: int = 42) -> tuple[set[str], set[str]]:
@@ -84,7 +112,10 @@ def main() -> None:
     counts = {"train": 0, "heldout": 0}
     with open(out / "train.jsonl", "w") as ftr, open(out / "heldout.jsonl", "w") as fho:
         for i, c in enumerate(chunks, start=1):
-            qs = parse_questions(ask_with_retry(chain, {"n": args.questions_per_chunk, "passage": c.page_content}))
+            raw = ask_with_retry(chain, {"n": args.questions_per_chunk, "passage": c.page_content})
+            qs = parse_questions(raw)
+            if not qs:
+                print("  no questions parsed; reply starts:", raw[:150].replace("\n", " "))
             time.sleep(args.sleep)
             split = "train" if c.metadata["source"] in train_src else "heldout"
             f = ftr if split == "train" else fho

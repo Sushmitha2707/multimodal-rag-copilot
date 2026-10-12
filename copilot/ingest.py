@@ -45,9 +45,21 @@ def load_pdf(path: Path) -> list[Document]:
 
 @lru_cache(maxsize=1)
 def _captioner():
-    from transformers import pipeline
+    """Load BLIP directly (the generic 'image-to-text' pipeline changed across transformers versions)."""
+    from transformers import BlipForConditionalGeneration, BlipProcessor
 
-    return pipeline("image-to-text", model=get_settings().caption_model)
+    name = get_settings().caption_model
+    return BlipProcessor.from_pretrained(name), BlipForConditionalGeneration.from_pretrained(name)
+
+
+def caption_image(img) -> str:
+    import torch
+
+    processor, model = _captioner()
+    inputs = processor(images=img, return_tensors="pt")
+    with torch.no_grad():
+        out = model.generate(**inputs, max_new_tokens=40)
+    return processor.decode(out[0], skip_special_tokens=True).strip()
 
 
 def load_image(path: Path) -> list[Document]:
@@ -55,7 +67,7 @@ def load_image(path: Path) -> list[Document]:
     from PIL import Image
 
     img = Image.open(path).convert("RGB")
-    caption = _captioner()(img)[0]["generated_text"]
+    caption = caption_image(img)
     parts = [f"[Image caption] {caption}"]
     try:
         import pytesseract

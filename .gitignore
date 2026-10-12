@@ -13,3 +13,4 @@ results/*
 .ruff_cache/
 data/my_corpus/
 data/pairs/
+data/index_sample/
