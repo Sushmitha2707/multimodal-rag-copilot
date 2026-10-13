@@ -20,6 +20,12 @@ if "fb_open" not in st.session_state:
 with st.sidebar:
     st.header("Settings")
     provider = st.selectbox("LLM provider", ["gemini", "openai", "anthropic"])
+    mode = st.selectbox(
+        "Answering mode",
+        ["simple", "graph"],
+        help="graph = LangGraph corrective RAG: grades the retrieved passages, rewrites the query and retries, "
+        "or says it doesn't know. Slower (extra LLM calls).",
+    )
     k = st.slider("Passages to retrieve (k)", 1, 10, 4)
     st.header("Add documents")
     uploads = st.file_uploader(
@@ -57,6 +63,8 @@ for idx, m in enumerate(st.session_state.messages):
     with st.chat_message(m["role"]):
         st.markdown(m["content"])
         if m["role"] == "assistant" and m.get("interaction_id", -1) >= 0:
+            if m.get("trace"):
+                st.caption("Workflow: " + " → ".join(m["trace"]))
             with st.expander("Sources"):
                 for s in m.get("sources", []):
                     st.markdown(
@@ -79,7 +87,10 @@ if question := st.chat_input("Ask a question about your documents"):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.spinner("Thinking..."):
         r = requests.post(
-            f"{API}/ask", headers=HEADERS, json={"question": question, "provider": provider, "k": k}, timeout=300
+            f"{API}/ask",
+            headers=HEADERS,
+            json={"question": question, "provider": provider, "k": k, "mode": mode},
+            timeout=300,
         )
     if r.ok:
         d = r.json()
@@ -89,6 +100,7 @@ if question := st.chat_input("Ask a question about your documents"):
                 "content": d["answer"],
                 "sources": d["sources"],
                 "interaction_id": d["interaction_id"],
+                "trace": d.get("trace", []),
             }
         )
     else:

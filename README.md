@@ -5,7 +5,7 @@
 
 A retrieval-augmented generation (RAG) copilot that answers questions over **PDFs, text, images and audio** and cites
 its sources. The repo covers the whole loop: ingestion, vector search, grounded generation, **embedding fine-tuning**,
-evaluation and user feedback collection.
+an optional **LangGraph corrective-RAG mode**, evaluation and user feedback collection.
 
 ## Results
 
@@ -25,15 +25,24 @@ Fine-tuned model: [Sushmitha2707/minilm-fastapi-docs-retrieval](https://huggingf
 ### End-to-end RAG evaluation
 
 17 hand-written questions over the 4 sample documents in `data/sample_docs` (one question is deliberately out of scope
-and should be answered with "I don't know").
+and should be answered with "I don't know"). Both answering modes were run with Gemini 3.5 Flash Lite as the generator
+and the judge.
 
-| LLM | Gold-keyword matches | Faithfulness (1-5) | Relevance (1-5) | Mean latency |
+| Answering mode | Gold-keyword matches | Faithfulness (1-5) | Relevance (1-5) | Mean latency |
 |---|---|---|---|---|
-| Gemini 3.5 Flash Lite | 17 / 17 | 5.00 | 5.00 | 2.8 s |
+| Simple (retrieve, then generate) | 17 / 17 | 5.00 | 5.00 | 2.80 s |
+| LangGraph corrective RAG | 17 / 17 | 5.00 | 5.00 | 3.12 s |
 
-**Read these numbers with care.** The corpus is tiny (8 chunks), the judge is the same model that wrote the answers
-(models grade themselves generously), and the questions are easy. It is a sanity check that the pipeline works end to
-end, not a benchmark.
+**Read these numbers with care.**
+- The two modes score identically, so this test set shows **no quality gain** from the graph. It adds about 0.3 s
+  (roughly 12%) of mean latency from one extra grading call per question.
+- The set is small and easy: the corpus is only 8 chunks, and the simple pipeline already answers the out-of-scope
+  question correctly. The set cannot show what the graph is built for, which is catching retrieval misses on harder
+  questions. A harder test set is future work.
+- The judge is the same model that wrote the answers (models grade themselves generously), and each figure comes from
+  a single run, so small latency differences are within noise.
+
+This is a sanity check that the pipeline works end to end, not a benchmark.
 
 ## How it works
 
@@ -50,6 +59,8 @@ end, not a benchmark.
                                                    SQLite feedback ──► preference pairs ──► DPO (LoRA)
 ```
 
+An optional LangGraph mode (below) grades the retrieved passages before generating the answer.
+
 ## Features
 
 - **Multimodal ingestion** with page and timestamp citations: PDF, text, images (BLIP captions, optional Tesseract OCR),
@@ -57,14 +68,16 @@ end, not a benchmark.
 - **Two vector stores** behind one interface: FAISS (local) and Pinecone (hosted).
 - **Grounded answers**: LangChain prompt that restricts answers to the retrieved passages, cites them as `[1]`, `[2]`,
   and falls back to "I don't know based on the provided documents."
+- **LangGraph corrective RAG (optional mode)**: grades the retrieved passages, rewrites the query and retries, or
+  falls back to "I don't know".
 - **Provider-switchable LLM layer**: Gemini, OpenAI and Anthropic adapters (only Gemini has been tested end to end).
 - **Embedding fine-tuning and evaluation**: synthetic pair generation with a leak-free split by source document,
   Recall@k / MRR comparison of base vs fine-tuned models.
-- **RAG evaluation**: keyword accuracy, LLM-judged faithfulness and relevance, latency.
+- **RAG evaluation**: keyword accuracy, LLM-judged faithfulness and relevance, latency, for both answering modes.
 - **Feedback loop**: thumbs up/down with an optional corrected answer, stored in SQLite and convertible to preference
   pairs. A LoRA + DPO training script with a plain-PyTorch loss is included.
 - **Service and UI**: FastAPI backend (optional API key) and a Streamlit chat app.
-- **Engineering**: 22 unit tests, ruff, GitHub Actions CI, Dockerfile.
+- **Engineering**: pytest unit tests, ruff, GitHub Actions CI, Dockerfile.
 
 ## Quickstart
 
@@ -104,24 +117,54 @@ python -m scripts.eval_retrieval --pairs data/pairs/heldout.jsonl --models sente
 # 4. Publish the model to the Hugging Face Hub (after `hf auth login`)
 python -m scripts.push_to_hub --repo-id YOUR-USERNAME/minilm-fastapi-docs-retrieval
 
-# 5. RAG evaluation on a clean index (sample docs only)
+# 5. RAG evaluation on a clean index (sample docs only), simple mode and LangGraph mode
 $env:INDEX_DIR="data/index_sample"
 python -m scripts.ingest_dir data/sample_docs
 python -m scripts.eval_rag --providers gemini --judge-provider gemini --sleep 4
+python -m scripts.eval_rag --providers gemini --judge-provider gemini --sleep 6 --mode graph --out results/rag_eval_graph.json
 Remove-Item Env:INDEX_DIR
 ```
 
 Optional: Pinecone (`PINECONE_API_KEY` in `.env`, then `python -m scripts.ingest_dir data/sample_docs --backend pinecone`),
 and DPO preference tuning (`pip install -r requirements-dpo.txt`, `python -m scripts.train_dpo`).
 
+## LangGraph corrective RAG (optional answering mode)
+
+Besides the simple retrieve-then-generate pipeline, the copilot has a [LangGraph](https://langchain-ai.github.io/langgraph/)
+workflow (`copilot/graph.py`) that checks the retrieved passages before answering:
+
+```mermaid
+flowchart LR
+    S([start]) --> R[retrieve]
+    R --> G{grade passages}
+    G -- relevant --> A[generate answer] --> E([end])
+    G -- not relevant, retries left --> W[rewrite query] --> R
+    G -- not relevant, no retries left --> F["fallback: I don't know"] --> E
+```
+
+- **Grade:** an LLM call decides whether the passages can answer the question.
+- **Rewrite and retry:** if not, the question is rewritten into a better search query and retrieval runs once more.
+- **Fallback:** if the second attempt also fails, the copilot says it doesn't know instead of answering from weak context.
+- **Cost:** an answerable question needs one extra LLM call (the grade). An unanswerable question takes three calls
+  (grade, rewrite, grade) and two retrievals, with no answer generated.
+
+Use it from the chat UI ("Answering mode: graph"), the API (`{"mode": "graph"}` in `/ask`), or the evaluation script:
+
+```powershell
+python -m scripts.eval_rag --providers gemini --sleep 6 --mode graph --out results/rag_eval_graph.json
+```
+
+The graph logic is unit-tested with a fake retriever and fake LLM (`tests/test_graph.py`). The measured comparison with
+the simple pipeline is in the Results section above.
+
 ## Project structure
 
 ```
-copilot/            api.py, rag.py, ingest.py, vectorstore.py, embeddings.py, llm.py, prompts.py,
+copilot/            api.py, rag.py, graph.py, ingest.py, vectorstore.py, embeddings.py, llm.py, prompts.py,
                     feedback.py, metrics.py, dpo.py, config.py
 scripts/            ingest_dir, make_pairs, train_embeddings, eval_retrieval, eval_rag,
                     push_to_hub, train_dpo
-tests/              pytest unit tests (metrics, parsing, feedback, API, DPO loss)
+tests/              pytest unit tests (metrics, parsing, feedback, API, LangGraph workflow, DPO loss)
 eval/qa_set.jsonl   17-question end-to-end evaluation set
 data/sample_docs/   4 small sample documents
 app.py              Streamlit chat UI
@@ -133,7 +176,8 @@ Dockerfile, .github/workflows/ci.yml
 - The fine-tuning gain is measured on **LLM-generated queries** over the **same documentation domain** with a small
   evaluation pool (64 passages) and a single run. It does not show that the model generalizes to other domains or to
   real user queries.
-- The RAG evaluation is small and self-judged (see above).
+- The RAG evaluation is small and self-judged (see above). It shows no measurable difference between the simple and
+  LangGraph modes; the graph's benefit on harder questions has not been tested.
 - Only the Gemini provider was tested end to end; the OpenAI and Anthropic adapters are untested.
 - Pinecone was tested with the sample documents only, with no performance comparison against FAISS.
 - Image support captions the picture; reading text inside images needs Tesseract. Scanned PDFs without a text layer
@@ -155,5 +199,5 @@ Dockerfile, .github/workflows/ci.yml
 
 ## Tech stack
 
-Python, PyTorch, Hugging Face (Transformers, Sentence-Transformers), LangChain, FAISS, Pinecone, FastAPI, Streamlit,
-Whisper, BLIP, Gemini API, SQLite, Docker, pytest, ruff, GitHub Actions.
+Python, PyTorch, Hugging Face (Transformers, Sentence-Transformers), LangChain, LangGraph, FAISS, Pinecone, FastAPI,
+Streamlit, Whisper, BLIP, Gemini API, SQLite, Docker, pytest, ruff, GitHub Actions.

@@ -16,7 +16,7 @@ jobs:
       - name: Install light dependencies (heavy ML libs are not needed for unit tests)
         run: |
           pip install -r requirements-dev.txt
-          pip install fastapi httpx python-multipart pydantic langchain-core langchain-text-splitters
+          pip install fastapi httpx python-multipart pydantic langchain-core langchain-text-splitters langgraph
       - run: ruff check .
       - run: ruff format --check .
       - run: pytest -q

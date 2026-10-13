@@ -76,3 +76,16 @@ def test_api_key_enforced_when_set(client, monkeypatch):
 def test_ingest_rejects_unsupported_extension(client):
     r = client.post("/ingest", files=[("files", ("evil.exe", b"MZ", "application/octet-stream"))])
     assert r.status_code == 200 and r.json()["chunks_indexed"] == 0 and "evil.exe" in r.json()["errors"]
+
+
+def test_graph_mode_uses_graph_engine_and_returns_trace(client, monkeypatch):
+    class FakeGraph(FakePipeline):
+        def answer(self, question, provider=None, k=None):
+            out = super().answer(question, provider, k)
+            out["trace"] = ["retrieve: q", "grade: yes", "generate"]
+            return out
+
+    monkeypatch.setattr(api, "_graph", FakeGraph())
+    body = client.post("/ask", json={"question": "How many leave days?", "mode": "graph"}).json()
+    assert body["trace"][-1] == "generate"
+    assert client.post("/ask", json={"question": "How many leave days?", "mode": "bogus"}).status_code == 422

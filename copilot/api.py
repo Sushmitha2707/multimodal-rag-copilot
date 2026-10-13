@@ -18,6 +18,7 @@ from copilot.config import get_settings
 
 app = FastAPI(title="Multimodal RAG Copilot", version="1.0")
 _pipeline = None
+_graph = None
 
 
 def require_key(x_api_key: str | None = Header(default=None)) -> None:
@@ -35,10 +36,21 @@ def get_pipeline():
     return _pipeline
 
 
+def get_graph():
+    """LangGraph corrective-RAG workflow sharing the same vector store as the simple pipeline."""
+    global _graph
+    if _graph is None:
+        from copilot.graph import GraphRAG  # imported lazily: needs langgraph
+
+        _graph = GraphRAG(store=get_pipeline().store)
+    return _graph
+
+
 class AskRequest(BaseModel):
     question: str = Field(min_length=3)
     provider: str | None = None
     k: int | None = Field(default=None, ge=1, le=20)
+    mode: str = Field(default="simple", pattern="^(simple|graph)$")  # graph = LangGraph corrective RAG
 
 
 class FeedbackRequest(BaseModel):
@@ -55,7 +67,8 @@ def health() -> dict:
 @app.post("/ask", dependencies=[Depends(require_key)])
 def ask(req: AskRequest) -> dict:
     try:
-        out = get_pipeline().answer(req.question, provider=req.provider, k=req.k)
+        engine = get_graph() if req.mode == "graph" else get_pipeline()
+        out = engine.answer(req.question, provider=req.provider, k=req.k)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     out["interaction_id"] = feedback.log_interaction(

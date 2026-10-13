@@ -7,6 +7,7 @@ Metrics per provider:
   latency_s    - mean seconds per question (retrieval + generation)
 
     python -m scripts.eval_rag --providers gemini --judge-provider gemini --sleep 4
+    python -m scripts.eval_rag --providers gemini --sleep 6 --mode graph --out results/rag_eval_graph.json
 """
 
 import argparse
@@ -67,10 +68,17 @@ def main() -> None:
     ap.add_argument("--judge-provider", default=None)
     ap.add_argument("--out", default="results/rag_eval.json")
     ap.add_argument("--sleep", type=float, default=4.0, help="seconds to wait between LLM calls")
+    ap.add_argument(
+        "--mode", choices=["simple", "graph"], default="simple", help="graph = LangGraph corrective RAG workflow"
+    )
     args = ap.parse_args()
 
     qa = [json.loads(line) for line in open(args.qa)]
     pipe = RAGPipeline()
+    if args.mode == "graph":
+        from copilot.graph import GraphRAG
+
+        pipe = GraphRAG(store=pipe.store)
     judge = JUDGE | get_chat_model(args.judge_provider) | StrOutputParser()
 
     results = {}
